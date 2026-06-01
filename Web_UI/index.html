@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>聊天室首页</title>
+<style>
+body { font-family: sans-serif; background:#f0f0f0; text-align:center; padding-top:100px; }
+a { display:block; margin:20px; font-size:24px; text-decoration:none; color:#2563eb; }
+</style>
+</head>
+<body>
+<h1>欢迎来到聊天室</h1>
+<a href="login.html">登录</a>
+<a href="register.html">注册</a>
+<a href="chat.html">进入聊天室</a>
+<a onclick="logout();" id="logout">退出登录</a>
+<script>
+function logout(){
+  localStorage.removeItem(
+    "token"
+  );
+  localStorage.removeItem(
+    "username"
+  );
+  document.getElementById("logout").innerText ="已退出";
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>登录账号</title>
+<style>
+body { font-family:sans-serif; background:#f0f0f0; display:flex; justify-content:center; align-items:center; height:100vh; }
+form { background:#fff; padding:30px; border-radius:10px; display:flex; flex-direction:column; gap:10px; }
+input, button { padding:10px; font-size:16px; }
+button { cursor:pointer; background:#2563eb; color:white; border:none; border-radius:5px; }
+</style>
+</head>
+<body>
+<form id="loginForm">
+<h2>登录</h2>
+<input type="text" placeholder="用户名" id="username" required>
+<input type="password" placeholder="密码" id="password" required>
+<button type="submit" id="Btn">登录</button>
+<div id="msg"></div>
+</form>
+
+<script>
+const form = document.getElementById('loginForm');
+form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    document.getElementById("Btn").disabled = true;
+    const res = await fetch('/api/login',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({username, password})
+    });
+    const data = await res.json();
+    if(data.success){
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('username', data.username);
+        location.href='chat.html';
+    } else {
+        document.getElementById('msg').innerText=data.error;
+    }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+/api https://chat-api/ 307
+/api/:type https://chat-api/:type 307

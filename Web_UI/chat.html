@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>群聊</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:sans-serif;
+background:#ececec6e;
+height:100vh;display:flex;flex-direction:column}
+header{height:60px;
+background:#cecece78;
+color:#000;
+backdrop-filter: blur(10px);
+display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold}
+#messages{flex:1;overflow-y:auto;background:#ececec42;
+padding:15px;display:flex;flex-direction:column;gap:14px}
+.msg-wrap{display:flex;flex-direction:column;width:100%}
+.self{align-items:flex-end}.other{align-items:flex-start}
+.msg-user{font-size:12px;color:#666;text-shadow: 0 0px 3px rgb(255 255 255);}.msg-time{font-size:11px;color:#fff;margin-top:4px;text-shadow: 0 0.3px 1.2px rgb(0 0 0);}
+.msg-bubble{max-width:75%;width:fit-content;padding:12px;border-radius:14px;word-break:break-word}
+.self .msg-bubble{background:#2563eb;color:#fff}
+.other .msg-bubble{background:#fff}
+.msg-image{max-width:260px;border-radius:10px;cursor:pointer}
+#sendBar{background:#ffffffb3;border-top:1px solid #ddd;padding:10px}
+#toolBar{display:flex;gap:8px;margin-bottom:8px}
+#toolBar button,#sendBtn{padding:8px 12px;border:none;border-radius:8px;cursor:pointer}
+#inputBar{display:flex;gap:10px}
+#msgInput{flex:1;padding:10px}
+button:disabled,input:disabled{opacity:.5}
+#previewModal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center}
+#previewModal img{max-width:95%;max-height:95%}
+#bg-div {
+    position: fixed;      /* 背景固定 */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;          /* 放到内容后面 */
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+</style>
+</head>
+<body>
+<header id="roomName">聊天室</header>
+<div id="bg-div" class=""></div>
+<script>
+async function setDivBackground() {
+  const resp = await fetch("https://api.miaomc.cn/image/get?type=json");
+  const data = await resp.json();
+  const div = document.getElementById("bg-div");
+  div.style.backgroundImage = `url(${data.url})`;
+  div.style.backgroundSize = "cover";
+  div.style.backgroundPosition = "center";
+  div.style.backgroundRepeat = "no-repeat";
+}
+setDivBackground();
+</script>
+<div id="messages"><span style="margin:auto;justify-content:center;font-size:20px;">加载中</span></div>
+
+<div id="sendBar">
+<div id="toolBar">
+<button id="emojiBtn">😀 表情</button>
+<button id="imageBtn">🖼️ 图片</button>
+<button id="fileBtn">📎 文件</button>
+</div>
+
+<div id="inputBar">
+<input id="msgInput" placeholder="输入消息">
+<button id="sendBtn">发送</button>
+</div>
+
+<input type="file" id="uploadBtn" accept="image/*" hidden>
+<input type="file" id="fileUpload" hidden>
+</div>
+
+<div id="previewModal"><img id="previewImage"></div>
+
+<script>
+const API="/api";
+const token=localStorage.getItem("token");
+const username=localStorage.getItem("username");
+if(!token||!username) location.href="login.html";
+
+const messagesEl=document.getElementById("messages");
+const msgInput=document.getElementById("msgInput");
+const sendBtn=document.getElementById("sendBtn");
+const uploadBtn=document.getElementById("uploadBtn");
+const fileUpload=document.getElementById("fileUpload");
+
+let latestMessageId=0;
+let sending=false;
+let pageVisible=true;
+
+document.addEventListener("visibilitychange",()=>{
+ pageVisible=!document.hidden;
+});
+
+function setSending(v){
+ sending=v;
+ [msgInput,sendBtn,uploadBtn,fileUpload,
+ imageBtn,fileBtn,emojiBtn].forEach(e=>e.disabled=v);
+ sendBtn.textContent=v?"发送中...":"发送";
+}
+
+function appendMessage(item){
+ const wrap=document.createElement("div");
+ wrap.className="msg-wrap "+(item.username===username?"self":"other");
+
+ const user=document.createElement("div");
+ user.className="msg-user";
+ user.textContent=item.username;
+
+ const bubble=document.createElement("div");
+ bubble.className="msg-bubble";
+
+ if(item.type==="graph"){
+   const img=document.createElement("img");
+   img.src=item.msg;
+   img.className="msg-image";
+   img.onclick=()=>{
+      previewImage.src=item.msg;
+      previewModal.style.display="flex";
+   };
+   bubble.appendChild(img);
+ }else{
+   const m=item.msg.match(/^\[(.+?)\]\((.+?)\)$/);
+   if(m){
+      const a=document.createElement("a");
+      a.href=m[2];
+      a.target="_blank";
+      a.textContent=m[1];
+      bubble.innerHTML="文件：";
+      bubble.appendChild(a);
+   }else{
+      bubble.textContent=item.msg;
+   }
+ }
+
+ const time=document.createElement("div");
+ time.className="msg-time";
+ time.textContent=new Date(item.created_at).toLocaleString();
+
+ wrap.append(user,bubble,time);
+ messagesEl.appendChild(wrap);
+}
+
+async function fetchMessages(){
+ const res=await fetch(API+"/messages?offset=0&limit=50",{
+   headers:{"x-token":token,"x-username":username}
+ });
+ const data=await res.json();
+ if(!data.success) return;
+
+ const nearBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;
+
+ data.messages.reverse().forEach(m=>{
+   if(m.id>latestMessageId){
+      latestMessageId=m.id;
+      appendMessage(m);
+   }
+ });
+
+ if(nearBottom){
+   messagesEl.scrollTop=messagesEl.scrollHeight;
+ }
+}
+
+async function uploadImage(file){
+ const fd=new FormData();
+ fd.append("image",file);
+ const r=await fetch("https://img.api.aa1.cn/api/upload",{method:"POST",body:fd});
+ const d=await r.json();
+ if(d.code!==200) throw new Error("上传失败");
+ return d.data.url;
+}
+
+async function sendPayload(type,msg){
+ const r=await fetch(API+"/send",{
+  method:"POST",
+  headers:{
+   "Content-Type":"application/json",
+   "x-token":token,
+   "x-username":username
+  },
+  body:JSON.stringify({type,msg})
+ });
+ const d=await r.json();
+ if(!d.success) throw new Error(d.error||"发送失败");
+ await fetchMessages();
+}
+
+sendBtn.onclick=async()=>{
+ const text=msgInput.value.trim();
+ if(!text||sending) return;
+ try{
+  setSending(true);
+  await sendPayload("msg",text);
+  msgInput.value="";
+ }catch(e){alert(e.message)}
+ finally{setSending(false)}
+};
+
+imageBtn.onclick=()=>uploadBtn.click();
+fileBtn.onclick=()=>fileUpload.click();
+
+const emojiList = [
+  "😀","😁","😂","🤣","😃","😄","😅","😆",
+  "😉","😊","🙂","🙃","😋","😎","😍","🥰",
+  "😘","😗","😙","😚","🤗","🤩","🤔","🤨",
+  "😐","😑","😶","🙄","😏","😣","😥","😮",
+  "😢","😭","😤","😠","😡","🤬","😱","😨",
+  "😰","😥","😓","🤯","😳","🥵","🥶","😵",
+  "🤕","🤒","🤢","🤮","🤧","😴","🥱","😪",
+  "👍","👎","👌","✌️","🤞","🤟","🤘","🤙",
+  "👋","🤚","🖐️","✋","🖖","👏","🙌","🤝",
+  "🙏","💪","👊","✊","🤛","🤜","👈","👉",
+  "👆","👇","☝️","✍️",
+  "❤️","🧡","💛","💚","💙","💜","🖤","🤍",
+  "🤎","💔","❣️","💕","💞","💓","💗","💖",
+  "💘","💝","💟",
+  "🔥","💯","⭐","🌟","✨","⚡","💥","💫",
+  "🎉","🎊","🎁","🏆","🥇","🥈","🥉","🎖️",
+  "🍎","🍉","🍇","🍓","🍒","🍍","🥭","🍑",
+  "🍔","🍟","🌭","🍕","🥪","🌮","🍗","🍜",
+  "🍣","🍤","🍰","🍩","🍪","🍫","🍭","☕",
+  "🍺","🥤",
+  "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼",
+  "🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔",
+  "🐧","🐦","🦄","🐙",
+  "⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱",
+  "🏓","🏸","🥊","🥋","🏆","🏅","🎯",
+  "🚗","🚕","🚙","🚌","🚓","🚑","🚒","🚚",
+  "🚜","🏍️","🚲","✈️","🚀","🛸","🚢",
+  "☀️","🌤️","⛅","🌧️","⛈️","❄️","☃️",
+  "🌈","🌙","⭐","🌍","🌎","🌏","🌋",
+  "🌲","🌳","🌴","🌵","🌹","🌺","🌻","🌼",
+  "💻","⌨️","🖥️","📱","☎️","📷","📹",
+  "🎮","🕹️","📺","🔋","💡","🔌","🖨️",
+  "✔️","❌","⭕","❗","❓","‼️","⁉️",
+  "💤","💢","💬","🗨️","🔔","🔕","📢",
+  "📣","⚠️","🚫","🔒","🔓"
+];
+
+emojiBtn.onclick = ()=>{
+  let panel =
+    document.getElementById(
+      "emojiPanel"
+    );
+  if(panel){
+    panel.remove();
+    return;
+  }
+  panel =document.createElement("div");
+  panel.id ="emojiPanel";
+  panel.style.position ="absolute";
+  panel.style.bottom ="120px";
+  panel.style.left ="10px";
+  panel.style.width = "420px";
+  panel.style.maxHeight ="320px";
+  panel.style.overflowY ="auto";
+  panel.style.background ="#fff";
+  panel.style.border ="1px solid #ddd";
+  panel.style.borderRadius ="10px";
+  panel.style.padding ="10px";
+  panel.style.display ="grid";
+  panel.style.gridTemplateColumns ="repeat(8,1fr)";
+  panel.style.gap ="6px";
+  panel.style.boxShadow ="0 4px 15px rgba(0,0,0,.15)";
+  emojiList.forEach(emoji=>{
+    const btn =document.createElement("button");
+    btn.textContent =emoji;
+    btn.style.fontSize = "22px";
+    btn.style.border = "none";
+    btn.style.background = "transparent";
+    btn.style.cursor = "pointer";
+    btn.onclick = ()=>{
+      msgInput.value += emoji;
+      panel.remove();
+      msgInput.focus();
+    };
+    panel.appendChild(btn);
+  });
+  document.body.appendChild(
+    panel
+  );
+};
+document.addEventListener(
+  "click",
+  e=>{
+    const panel =
+      document.getElementById(
+        "emojiPanel"
+      );
+    if(
+      !panel
+    ){
+      return;
+    }
+    if(
+      e.target === emojiBtn ||
+      panel.contains(e.target)
+    ){
+      return;
+    }
+    panel.remove();
+  }
+);
+
+uploadBtn.onchange=async()=>{
+ const f=uploadBtn.files[0];
+ if(!f) return;
+ try{
+  setSending(true);
+  const url=await uploadImage(f);
+  await sendPayload("graph",url);
+ }catch(e){alert(e.message)}
+ finally{
+  setSending(false);
+  uploadBtn.value="";
+ }
+};
+
+fileUpload.onchange=async()=>{
+ const f=fileUpload.files[0];
+ if(!f) return;
+ try{
+  setSending(true);
+  const url=await uploadImage(f);
+  await sendPayload("msg",`[${f.name}](${url})`);
+ }catch(e){alert(e.message)}
+ finally{
+  setSending(false);
+  fileUpload.value="";
+ }
+};
+
+previewModal.onclick=()=>previewModal.style.display="none";
+
+fetchMessages();
+document.getElementById("messages").innerHTML="";
+setInterval(()=>{
+ if(pageVisible) fetchMessages();
+},5000);
+</script>
+
+<!-- 群信息弹窗 -->
+<div id="infoModal" class="info-modal">
+  <div class="info-box">
+    <h2>
+      群公告
+    </h2>
+    <div class="info-content">
+      <p>
+        <b></b>
+      </p>
+      <div id="roomNotice"></div>
+<!---
+      <p style="margin-top:15px;">
+        <b>群成员：</b>
+        <span id="roomMembers">
+          0
+        </span>
+      </p>--->
+    </div>
+    <button id="infoConfirm">
+      确认
+    </button>
+  </div>
+</div>
+<style>
+.info-modal{
+  position:fixed;
+  left:0;
+  top:0;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,.5);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+.info-box{
+  width:90%;
+  max-width:420px;
+  background:white;
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 5px 20px rgba(0,0,0,.2);
+}
+.info-box h2{
+  margin-top:0;
+  text-align:center;
+}
+.info-content{
+  margin:15px 0;
+  line-height:1.8;
+  word-break:break-word;
+}
+#infoConfirm{
+  width:100%;
+  height:42px;
+  border:none;
+  border-radius:8px;
+  background:#2563eb;
+  color:white;
+  cursor:pointer;
+}
+</style>
+<script>
+async function loadRoomInfo(){
+  try{
+    const res =
+      await fetch(
+        API + "/info"
+      );
+    const data =
+      await res.json();
+    if(!data.success){
+      return;
+    }
+    document.getElementById(
+      "roomName"
+    ).innerText =
+      data.roomName+"（"+data.members+"）";
+    document.title =data.roomName+"（"+data.members+"）";
+    document.getElementById(
+      "roomNotice"
+    ).innerText =
+      data.notice;
+    /*document.getElementById(
+      "roomMembers"
+    ).innerText =
+      data.members;*/
+  }catch(err){
+    console.error(err);
+  }
+}
+document
+.getElementById(
+  "infoConfirm"
+)
+.onclick = ()=>{
+
+  document
+  .getElementById(
+    "infoModal"
+  )
+  .style.display =
+    "none";
+};
+loadRoomInfo();
+</script>
+
+</body>
+</html>
