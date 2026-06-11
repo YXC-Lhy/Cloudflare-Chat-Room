@@ -1,5 +1,7 @@
 # Cloudflare-Chat-Room
-利用Cloudflare免费D1存储和pages搭建聊天室网站
+利用Cloudflare免费D1存储和pages搭建聊天室网站  
+## Cloudflare一键部署  
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YXC-Lhy/Cloudflare-Chat-Room)   
 ## 部署步骤  
 1.创建pages，压缩上传_worker.js（里面的设置参数需调）   
 2.创建D1存储，绑定到pages，名字设为DB，打开/init初始化D1或在D1控制台输入D1.txt里的CREATE指令来初始化  
